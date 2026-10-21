@@ -1296,6 +1296,18 @@ function MainRoutes() {
   ];
 
   const checkAuth = async () => {
+    // Capture session token passed from OAuth callback if present
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const sessionParam = searchParams.get('session');
+      if (sessionParam) {
+        localStorage.setItem('bulkmail_session', sessionParam);
+        searchParams.delete('session');
+        const cleanQuery = searchParams.toString() ? `?${searchParams.toString()}` : '';
+        window.history.replaceState({}, document.title, window.location.pathname + cleanQuery + window.location.hash);
+      }
+    } catch {}
+
     setAuthLoading(true);
     setTimeoutError(false);
     const start = Date.now();
@@ -1338,6 +1350,7 @@ function MainRoutes() {
     checkAuth();
 
     const handleUnauthorized = () => {
+      localStorage.removeItem('bulkmail_session');
       setCurrentUser(null);
       navigate('/login');
     };
@@ -1349,6 +1362,7 @@ function MainRoutes() {
     try {
       await fetch(`${API}/auth/logout`, { method: 'POST' });
     } catch {}
+    localStorage.removeItem('bulkmail_session');
     setCurrentUser(null);
     navigate('/login');
   };

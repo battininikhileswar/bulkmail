@@ -109,6 +109,7 @@ if config.FRONTEND_URL and config.FRONTEND_URL not in cors_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -190,10 +191,18 @@ def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
             except Exception:
                 pass
 
-        # 2. Verify signed session cookie
-        session_cookie = request.cookies.get("app_session")
-        if session_cookie:
-            payload = auth.verify_token(session_cookie)
+        # 2. Verify signed session token from Authorization header or cookie
+        auth_header = request.headers.get("Authorization", "").strip()
+        session_token = None
+        if auth_header.startswith("Bearer "):
+            session_token = auth_header[7:].strip()
+        elif request.headers.get("X-Session-Token"):
+            session_token = request.headers.get("X-Session-Token", "").strip()
+        if not session_token:
+            session_token = request.cookies.get("app_session")
+
+        if session_token:
+            payload = auth.verify_token(session_token)
             if payload and "uid" in payload:
                 user_row = db.get_user_by_id(conn, payload["uid"])
                 if user_row:
@@ -308,7 +317,7 @@ def auth_callback(
 
         session_token = auth.create_session_cookie(uid, email)
         c_params = get_session_cookie_params(request)
-        redirect_resp = RedirectResponse(url=f"{frontend_base}/app", status_code=303)
+        redirect_resp = RedirectResponse(url=f"{frontend_base}/app?session={session_token}", status_code=303)
         redirect_resp.set_cookie(
             key="app_session",
             value=session_token,
@@ -318,7 +327,12 @@ def auth_callback(
             max_age=14 * 86400,
             path="/",
         )
-        redirect_resp.delete_cookie(key="oauth_state", path="/")
+        redirect_resp.delete_cookie(
+            key="oauth_state",
+            path="/",
+            samesite=c_params["samesite"],
+            secure=c_params["secure"],
+        )
         return redirect_resp
     except Exception as e:
         logger.error(f"OAuth callback failed: {e}")
@@ -357,9 +371,15 @@ def auth_me(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
 
 
 @app.post("/api/auth/logout")
-def auth_logout(response: Response) -> Dict[str, Any]:
+def auth_logout(request: Request, response: Response) -> Dict[str, Any]:
     """Clear session cookie and log user out."""
-    response.delete_cookie(key="app_session", path="/")
+    c_params = get_session_cookie_params(request)
+    response.delete_cookie(
+        key="app_session",
+        path="/",
+        samesite=c_params["samesite"],
+        secure=c_params["secure"],
+    )
     return {"success": True, "message": "Signed out successfully."}
 
 
