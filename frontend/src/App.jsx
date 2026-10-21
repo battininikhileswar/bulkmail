@@ -1367,7 +1367,25 @@ function MainRoutes() {
   useEffect(() => {
     checkAuth();
 
-    const handleUnauthorized = () => {
+    let unauthCheckInProgress = false;
+    const handleUnauthorized = async () => {
+      const token = localStorage.getItem('bulkmail_session');
+      if (!token) {
+        setCurrentUser(null);
+        navigate('/login');
+        return;
+      }
+      if (unauthCheckInProgress) return;
+      unauthCheckInProgress = true;
+      try {
+        const verifyRes = await fetch(`${API}/auth/me`);
+        if (verifyRes.ok) {
+          // Token is still valid on backend; ignore transient background failure
+          unauthCheckInProgress = false;
+          return;
+        }
+      } catch {}
+      unauthCheckInProgress = false;
       localStorage.removeItem('bulkmail_session');
       setCurrentUser(null);
       navigate('/login');

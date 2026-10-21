@@ -426,3 +426,79 @@ def test_ownerless_rows_never_returned_to_any_user():
         activity = client.get("/api/activity", headers=user_header).json()
         assert not any(a["id"] == orphan_aid for a in activity)
 
+
+def test_serverless_self_healing_authentication():
+    """A valid signed session token automatically self-heals across serverless cold-start containers."""
+    client = TestClient(main.app)
+
+    # User does NOT exist in the database yet (simulating cold lambda container)
+    conn = db.get_db_connection()
+    assert db.get_user_by_id(conn, 88) is None
+    assert db.get_user_by_email(conn, "serverless.user@example.com") is None
+    conn.close()
+
+    # Create signed session token for non-existent user
+    token = auth.create_session_cookie(user_id=88, email="serverless.user@example.com", name="Serverless User")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Protected endpoints should self-heal and return 200, NOT 401
+    me_res = client.get("/api/auth/me", headers=headers)
+    assert me_res.status_code == 200
+    me_data = me_res.json()
+    assert me_data["id"] == 88
+    assert me_data["email"] == "serverless.user@example.com"
+    assert me_data["name"] == "Serverless User"
+
+    stats_res = client.get("/api/stats", headers=headers)
+    assert stats_res.status_code == 200
+    assert "total" in stats_res.json()
+
+    campaigns_res = client.get("/api/campaigns", headers=headers)
+    assert campaigns_res.status_code == 200
+    assert isinstance(campaigns_res.json(), list)
+
+    drafts_res = client.get("/api/drafts", headers=headers)
+    assert drafts_res.status_code == 200
+
+    watcher_res = client.get("/api/watcher/status", headers=headers)
+    assert watcher_res.status_code == 200
+
+    activity_res = client.get("/api/activity", headers=headers)
+    assert activity_res.status_code == 200
+
+    # Verify user record was persisted with identical user ID
+    conn = db.get_db_connection()
+    persisted = db.get_user_by_id(conn, 88)
+    assert persisted is not None
+    assert persisted["email"] == "serverless.user@example.com"
+    conn.close()
+
+
+def test_login_and_app_fallback_routes():
+    """Direct requests to /login and /app on backend return 303 Redirect to frontend instead of 404."""
+    client = TestClient(main.app)
+
+    # Test /login and /api/login
+    res_login = client.get("/login", follow_redirects=False)
+    assert res_login.status_code == 303
+    assert f"{config.FRONTEND_URL}/login" in res_login.headers.get("location", "")
+
+    res_api_login = client.get("/api/login", follow_redirects=False)
+    assert res_api_login.status_code == 303
+    assert f"{config.FRONTEND_URL}/login" in res_api_login.headers.get("location", "")
+
+    # Test JSON accept header for /login
+    json_login = client.get("/login", headers={"Accept": "application/json"})
+    assert json_login.status_code == 200
+    assert "login_url" in json_login.json()
+
+    # Test /app and /api/app
+    res_app = client.get("/app", follow_redirects=False)
+    assert res_app.status_code == 303
+    assert f"{config.FRONTEND_URL}/app" in res_app.headers.get("location", "")
+
+    res_api_app = client.get("/api/app", follow_redirects=False)
+    assert res_api_app.status_code == 303
+    assert f"{config.FRONTEND_URL}/app" in res_api_app.headers.get("location", "")
+
+

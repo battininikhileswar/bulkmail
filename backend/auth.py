@@ -73,13 +73,23 @@ def verify_token(signed_token: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
 
 
-def create_session_cookie(user_id: int, email: str, days: int = 14) -> str:
+def create_session_cookie(
+    user_id: int,
+    email: str,
+    days: int = 14,
+    name: Optional[str] = None,
+    picture: Optional[str] = None,
+) -> str:
     """Generate a signed session cookie value for the authenticated user."""
     payload = {
         "uid": user_id,
         "email": email,
         "exp": int(time.time() + (days * 86400)),
     }
+    if name:
+        payload["name"] = name
+    if picture:
+        payload["picture"] = picture
     return sign_token(payload)
 
 

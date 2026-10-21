@@ -203,8 +203,21 @@ def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
 
         if session_token:
             payload = auth.verify_token(session_token)
-            if payload and "uid" in payload:
-                user_row = db.get_user_by_id(conn, payload["uid"])
+            if payload and ("uid" in payload or "email" in payload):
+                uid = payload.get("uid")
+                email = payload.get("email")
+                user_row = db.get_user_by_id(conn, uid) if uid is not None else None
+                if not user_row and email:
+                    # Self-heal across serverless containers: recover or recreate user record
+                    user_row = db.get_user_by_email(conn, email)
+                    if not user_row:
+                        user_row, _ = db.get_or_create_user(
+                            conn=conn,
+                            email=email,
+                            name=payload.get("name") or email.split("@")[0],
+                            picture_url=payload.get("picture"),
+                            user_id=uid,
+                        )
                 if user_row:
                     return dict(user_row)
 
@@ -235,6 +248,23 @@ def get_current_user(request: Request) -> Dict[str, Any]:
 
 # --- Auth Endpoints (Phase 11) ---
 
+@app.get("/login", include_in_schema=False)
+@app.get("/api/login", include_in_schema=False)
+def login_fallback(request: Request) -> Any:
+    """Fallback handler redirecting direct backend /login hits to frontend login page."""
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept and "text/html" not in accept:
+        return {"status": "ok", "login_url": f"{config.FRONTEND_URL}/login"}
+    return RedirectResponse(url=f"{config.FRONTEND_URL}/login", status_code=303)
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/api/app", include_in_schema=False)
+def app_fallback(request: Request) -> Any:
+    """Fallback handler redirecting direct backend /app hits to frontend app page."""
+    return RedirectResponse(url=f"{config.FRONTEND_URL}/app", status_code=303)
+
+
 @app.get("/auth/login", include_in_schema=False)
 def auth_login_alias(request: Request) -> Any:
     """Fallback alias handling /auth/login if called without /api prefix."""
@@ -245,19 +275,21 @@ def auth_login_alias(request: Request) -> Any:
 def auth_login(request: Request) -> Any:
     """Initiate Google OAuth 2.0 authorization code flow with PKCE and state."""
     verifier, challenge = auth.generate_pkce_pair()
-    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
     redirect_uri = config.OAUTH_REDIRECT_URI
 
-    # Store state & code_verifier in signed temporary cookie (10 minute expiry)
+    # Store state & code_verifier in signed temporary token (10 minute expiry)
     state_token = auth.sign_token({
-        "state": state,
+        "state": nonce,
         "verifier": verifier,
         "redirect_uri": redirect_uri,
         "exp": int(time.time() + 600),
     })
 
     try:
-        auth_url = auth.build_authorization_url(state=state, code_challenge=challenge, redirect_uri=redirect_uri)
+        # Use signed state_token as the state parameter so Google returns it in the callback query param.
+        # This guarantees reliable PKCE exchange even if browser cookies are blocked cross-site.
+        auth_url = auth.build_authorization_url(state=state_token, code_challenge=challenge, redirect_uri=redirect_uri)
         resp = RedirectResponse(url=auth_url, status_code=303)
         c_params = get_session_cookie_params(request)
         resp.set_cookie(
@@ -289,9 +321,20 @@ def auth_callback(
     if not code or not state:
         return RedirectResponse(url=f"{frontend_base}/login?auth_error=missing_code_or_state")
 
-    state_cookie = request.cookies.get("oauth_state")
-    verified_state = auth.verify_token(state_cookie)
-    if not verified_state or verified_state.get("state") != state:
+    # 1. Verify state directly from Google query param (signed token)
+    verified_state = None
+    if state and "." in state:
+        verified_state = auth.verify_token(state)
+
+    # 2. Fallback to oauth_state cookie
+    if not verified_state:
+        state_cookie = request.cookies.get("oauth_state")
+        if state_cookie:
+            verified_state = auth.verify_token(state_cookie)
+            if verified_state and verified_state.get("state") != state and state_cookie != state:
+                verified_state = None
+
+    if not verified_state:
         return RedirectResponse(url=f"{frontend_base}/login?auth_error=invalid_oauth_state")
 
     code_verifier = verified_state.get("verifier", "")
@@ -318,7 +361,7 @@ def auth_callback(
         finally:
             conn.close()
 
-        session_token = auth.create_session_cookie(uid, email)
+        session_token = auth.create_session_cookie(uid, email, name=name, picture=picture)
         c_params = get_session_cookie_params(request)
         redirect_resp = RedirectResponse(url=f"{frontend_base}/app#session={session_token}", status_code=303)
         redirect_resp.set_cookie(
@@ -395,7 +438,7 @@ def auth_test_login(email: str, name: str = "Test User", response: Response = No
         uid = user_row["id"]
     finally:
         conn.close()
-    token = auth.create_session_cookie(uid, email)
+    token = auth.create_session_cookie(uid, email, name=name)
     if response:
         response.set_cookie(key="app_session", value=token, httponly=True, samesite="lax", path="/")
     return {"user_id": uid, "email": email, "token": token}

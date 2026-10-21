@@ -383,6 +383,7 @@ def get_or_create_user(
     email: str,
     name: str,
     picture_url: Optional[str] = None,
+    user_id: Optional[int] = None,
 ) -> Tuple[sqlite3.Row, bool]:
     """Look up user by email or create new. If this is the first user ever, migrates existing data to them."""
     clean_email = email.strip().lower()
@@ -409,14 +410,28 @@ def get_or_create_user(
     now_str = datetime.utcnow().isoformat()
 
     with conn:
-        cursor.execute(
-            """
-            INSERT INTO users (email, name, picture_url, created_at, warmup_enabled, warmup_day, daily_cap)
-            VALUES (?, ?, ?, ?, 1, 1, ?)
-            """,
-            (clean_email, name, picture_url, now_str, default_cap),
-        )
-        new_id = cursor.lastrowid
+        if user_id is not None:
+            cursor.execute(
+                """
+                INSERT INTO users (id, email, name, picture_url, created_at, warmup_enabled, warmup_day, daily_cap)
+                VALUES (?, ?, ?, ?, ?, 1, 1, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    email = excluded.email,
+                    name = excluded.name,
+                    picture_url = COALESCE(excluded.picture_url, users.picture_url)
+                """,
+                (user_id, clean_email, name, picture_url, now_str, default_cap),
+            )
+            new_id = user_id
+        else:
+            cursor.execute(
+                """
+                INSERT INTO users (email, name, picture_url, created_at, warmup_enabled, warmup_day, daily_cap)
+                VALUES (?, ?, ?, ?, 1, 1, ?)
+                """,
+                (clean_email, name, picture_url, now_str, default_cap),
+            )
+            new_id = cursor.lastrowid
 
     if is_first:
         migrate_unassigned_data_to_user(conn, new_id)
