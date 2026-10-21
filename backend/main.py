@@ -246,16 +246,18 @@ def auth_login(request: Request) -> Any:
     """Initiate Google OAuth 2.0 authorization code flow with PKCE and state."""
     verifier, challenge = auth.generate_pkce_pair()
     state = secrets.token_urlsafe(32)
+    redirect_uri = config.OAUTH_REDIRECT_URI
 
     # Store state & code_verifier in signed temporary cookie (10 minute expiry)
     state_token = auth.sign_token({
         "state": state,
         "verifier": verifier,
+        "redirect_uri": redirect_uri,
         "exp": int(time.time() + 600),
     })
 
     try:
-        auth_url = auth.build_authorization_url(state=state, code_challenge=challenge)
+        auth_url = auth.build_authorization_url(state=state, code_challenge=challenge, redirect_uri=redirect_uri)
         resp = RedirectResponse(url=auth_url, status_code=303)
         c_params = get_session_cookie_params(request)
         resp.set_cookie(
@@ -293,8 +295,9 @@ def auth_callback(
         return RedirectResponse(url=f"{frontend_base}/login?auth_error=invalid_oauth_state")
 
     code_verifier = verified_state.get("verifier", "")
+    redirect_uri = verified_state.get("redirect_uri", config.OAUTH_REDIRECT_URI)
     try:
-        tokens = auth.exchange_code_for_tokens(code, code_verifier)
+        tokens = auth.exchange_code_for_tokens(code, code_verifier, redirect_uri=redirect_uri)
         user_info = auth.fetch_google_user_info(tokens["access_token"])
         email = user_info.get("email", "").lower().strip()
         name = user_info.get("name") or email.split("@")[0]

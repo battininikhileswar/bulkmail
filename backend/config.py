@@ -149,11 +149,38 @@ FRONTEND_URL = os.getenv(
 ).rstrip("/")
 
 # OAuth redirect URI resolution
-_vercel_domain = os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or os.getenv("VERCEL_URL")
-if _vercel_domain and not os.getenv("OAUTH_REDIRECT_URI"):
-    OAUTH_REDIRECT_URI = f"https://{_vercel_domain}/api/auth/callback"
-else:
-    OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
+# Priority:
+# 1. Explicit OAUTH_REDIRECT_URI environment variable (Vercel or local .env)
+# 2. Vercel System Domain (VERCEL_PROJECT_PRODUCTION_URL / VERCEL_URL)
+# 3. Production / Vercel environment default: https://bulkmail-backend-nine.vercel.app/api/auth/callback
+# 4. Local development default: http://localhost:8000/api/auth/callback
+def _resolve_oauth_redirect_uri() -> str:
+    env_uri = os.getenv("OAUTH_REDIRECT_URI", "").strip()
+    is_vercel = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or IS_VERCEL)
+    is_prod = os.getenv("ENVIRONMENT", "").lower() in ("production", "prod") or IS_PRODUCTION or is_vercel
+
+    # If running on Vercel or in production, do not allow localhost URIs
+    if is_vercel or is_prod:
+        if env_uri and "localhost" not in env_uri and "127.0.0.1" not in env_uri:
+            return env_uri
+
+        vercel_domain = os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or os.getenv("VERCEL_URL")
+        if vercel_domain:
+            domain = vercel_domain.strip().rstrip("/")
+            if not domain.startswith("http://") and not domain.startswith("https://"):
+                domain = f"https://{domain}"
+            return f"{domain}/api/auth/callback"
+
+        return "https://bulkmail-backend-nine.vercel.app/api/auth/callback"
+
+    # Local development
+    if env_uri:
+        return env_uri
+
+    return "http://localhost:8000/api/auth/callback"
+
+
+OAUTH_REDIRECT_URI = _resolve_oauth_redirect_uri()
 
 _custom_tokens = os.getenv("TOKENS_DIR", "").strip()
 TOKENS_DIR = Path(_custom_tokens) if _custom_tokens else DATA_DIR / "tokens"

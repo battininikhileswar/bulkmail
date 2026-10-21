@@ -138,18 +138,19 @@ def get_oauth_client_config() -> Dict[str, Any]:
     }
 
 
-def build_authorization_url(state: str, code_challenge: str) -> str:
+def build_authorization_url(state: str, code_challenge: str, redirect_uri: Optional[str] = None) -> str:
     """Build the Google OAuth 2.0 authorization URL with PKCE and state."""
     cfg = get_oauth_client_config()
+    target_redirect_uri = redirect_uri or config.OAUTH_REDIRECT_URI
     if not cfg["client_id"]:
         raise ValueError(
             "Google credentials not configured. Please place a 'Web application' credentials.json in backend/ "
-            "with Authorized redirect URI: http://localhost:8000/api/auth/callback."
+            f"or configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET with Authorized redirect URI: {target_redirect_uri}."
         )
 
     params = {
         "client_id": cfg["client_id"],
-        "redirect_uri": config.OAUTH_REDIRECT_URI,
+        "redirect_uri": target_redirect_uri,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
@@ -162,16 +163,17 @@ def build_authorization_url(state: str, code_challenge: str) -> str:
     return f"{cfg['auth_uri']}?{encoded_params}"
 
 
-def exchange_code_for_tokens(code: str, code_verifier: str) -> Dict[str, Any]:
+def exchange_code_for_tokens(code: str, code_verifier: str, redirect_uri: Optional[str] = None) -> Dict[str, Any]:
     """Exchange authorization code and PKCE verifier for Google tokens."""
     cfg = get_oauth_client_config()
+    target_redirect_uri = redirect_uri or config.OAUTH_REDIRECT_URI
     data = {
         "client_id": cfg["client_id"],
         "client_secret": cfg["client_secret"],
         "code": code,
         "code_verifier": code_verifier,
         "grant_type": "authorization_code",
-        "redirect_uri": config.OAUTH_REDIRECT_URI,
+        "redirect_uri": target_redirect_uri,
     }
     res = requests.post(cfg["token_uri"], data=data, timeout=15)
     if not res.ok:
