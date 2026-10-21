@@ -1298,13 +1298,31 @@ function MainRoutes() {
   const checkAuth = async () => {
     // Capture session token passed from OAuth callback if present
     try {
-      const searchParams = new URLSearchParams(window.location.search);
-      const sessionParam = searchParams.get('session');
-      if (sessionParam) {
-        localStorage.setItem('bulkmail_session', sessionParam);
-        searchParams.delete('session');
-        const cleanQuery = searchParams.toString() ? `?${searchParams.toString()}` : '';
-        window.history.replaceState({}, document.title, window.location.pathname + cleanQuery + window.location.hash);
+      let sessionToken = null;
+
+      // 1. Check URL fragment (#session=...) - preferred secure approach (never sent to server or recorded in logs)
+      if (window.location.hash) {
+        const hashStr = window.location.hash.replace(/^#/, '');
+        const hashParams = new URLSearchParams(hashStr);
+        if (hashParams.has('session')) {
+          sessionToken = hashParams.get('session');
+        }
+      }
+
+      // 2. Check query string (?session=...) - fallback
+      if (!sessionToken && window.location.search) {
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.has('session')) {
+          sessionToken = searchParams.get('session');
+          searchParams.delete('session');
+        }
+      }
+
+      // If token received from OAuth callback, persist to localStorage and sanitize URL
+      if (sessionToken) {
+        localStorage.setItem('bulkmail_session', sessionToken);
+        const cleanSearch = window.location.search.replace(/[?&]session=[^&#]+/, '').replace(/^&/, '?');
+        window.history.replaceState({}, document.title, window.location.pathname + (cleanSearch && cleanSearch !== '?' ? cleanSearch : ''));
       }
     } catch {}
 

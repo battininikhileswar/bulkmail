@@ -320,7 +320,7 @@ def auth_callback(
 
         session_token = auth.create_session_cookie(uid, email)
         c_params = get_session_cookie_params(request)
-        redirect_resp = RedirectResponse(url=f"{frontend_base}/app?session={session_token}", status_code=303)
+        redirect_resp = RedirectResponse(url=f"{frontend_base}/app#session={session_token}", status_code=303)
         redirect_resp.set_cookie(
             key="app_session",
             value=session_token,
