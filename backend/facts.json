@@ -1,0 +1,33 @@
+{
+  "_notice": "SAMPLE - All details below are sample placeholder data for testing and development",
+  "event_name": "[SAMPLE] Tech Innovation Summit 2026",
+  "date": "[SAMPLE] November 15, 2026",
+  "time": "[SAMPLE] 09:00 AM - 05:00 PM EST",
+  "venue": "[SAMPLE] Metropolitan Convention Center, Hall B, New York, NY",
+  "registration_start_time": "[SAMPLE] 08:30 AM EST",
+  "faqs": [
+    {
+      "id": 1,
+      "question": "[SAMPLE] Is parking available on-site at the venue?",
+      "answer": "[SAMPLE] Yes, complimentary parking is available in Parking Lot 2 for all registered attendees with a valid event pass."
+    },
+    {
+      "id": 2,
+      "question": "[SAMPLE] Will vegetarian or dietary-restricted lunch options be provided?",
+      "answer": "[SAMPLE] Yes, lunch is provided with vegetarian, vegan, and gluten-free options clearly marked at the catering stations."
+    },
+    {
+      "id": 3,
+      "question": "[SAMPLE] Can I transfer my event ticket to a colleague if I cannot attend?",
+      "answer": "[SAMPLE] Yes, registrations can be transferred to a colleague up to 24 hours prior to the event by replying directly to this email."
+    }
+  ],
+  "do_not_answer": [
+    "refunds",
+    "discounts",
+    "special accommodations",
+    "complaints",
+    "legal",
+    "payments"
+  ]
+}

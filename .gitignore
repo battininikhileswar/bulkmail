@@ -1,0 +1,39 @@
+# Credentials & Environment secrets
+credentials.json
+backend/credentials.json
+token.json
+backend/token.json
+tokens/
+backend/tokens/
+.env
+backend/.env
+*.env
+*.env.*
+!*.env.example
+
+# Databases & Backups
+*.db
+*.sqlite3
+backups/
+backend/backups/
+
+# Node modules & build
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+venv/
+.pytest_cache/
+backend/.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db

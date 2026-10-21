@@ -1,0 +1,11 @@
+Hi {name},
+
+Thank you for registering for our event! We are excited to have you join us. We'll be sending over session schedules, speaker announcements, and check-in details as the date approaches.
+
+If you have any questions or require special accommodations, simply reply directly to this email and our team will be glad to assist you.
+
+Best regards,
+{sender_name}
+
+---
+To unsubscribe from future event updates, reply to this email with "UNSUBSCRIBE" in the subject or body.

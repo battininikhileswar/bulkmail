@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0A0A0A;
+  --surface: #121212;
+  --surface-2: #1A1A1A;
+  --border: rgba(212, 175, 55, 0.22);
+  --border-strong: rgba(212, 175, 55, 0.5);
+  --gold: #D4AF37;
+  --gold-light: #F2D675;
+  --gold-dark: #B8962E;
+  --gold-gradient: linear-gradient(135deg, #F2D675 0%, #D4AF37 50%, #B8962E 100%);
+  --text: #F5F1E6;
+  --text-muted: #A59F8F;
+  --on-gold: #0A0A0A;
+
+  --success: #3DDC97;
+  --danger: #FF5C5C;
+  --warning: #FF9F43;
+  --info: #6EA8FF;
+}
+
+*, ::before, ::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #0A0A0A;
+  color: #F5F1E6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: #D4AF37;
+  color: #0A0A0A;
+}
+
+/* Custom black & gold scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0A;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.6);
+}
+
+/* Dark Glassmorphism Classes */
+.glass {
+  background: rgba(18, 18, 18, 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  box-shadow: inset 0 1px 0 rgba(242, 214, 117, 0.12), 0 8px 32px rgba(0, 0, 0, 0.45);
+  border-radius: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass:hover {
+  border-color: rgba(212, 175, 55, 0.5);
+}
+
+.glass-strong {
+  background: rgba(18, 18, 18, 0.75);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  backdrop-filter: blur(20px) saturate(120%);
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  box-shadow: inset 0 1px 0 rgba(242, 214, 117, 0.12), 0 8px 32px rgba(0, 0, 0, 0.45);
+  border-radius: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-strong:hover {
+  border-color: rgba(212, 175, 55, 0.5);
+}
+
+/* Fallback for browsers that do not support backdrop-filter */
+@supports not ((-webkit-backdrop-filter: blur(14px)) or (backdrop-filter: blur(14px))) {
+  .glass {
+    background: rgba(18, 18, 18, 0.92);
+  }
+  .glass-strong {
+    background: rgba(18, 18, 18, 0.95);
+  }
+}
+
+/* Gold glow drifting animations */
+@keyframes drift-orb-1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(35px, -25px) scale(1.08);
+  }
+}
+
+@keyframes drift-orb-2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-30px, 30px) scale(0.94);
+  }
+}
+
+@keyframes drift-orb-3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(25px, 20px) scale(1.05);
+  }
+}
+
+.animate-drift-1 {
+  animation: drift-orb-1 14s ease-in-out infinite;
+}
+
+.animate-drift-2 {
+  animation: drift-orb-2 18s ease-in-out infinite;
+}
+
+.animate-drift-3 {
+  animation: drift-orb-3 16s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift-1,
+  .animate-drift-2,
+  .animate-drift-3 {
+    animation: none !important;
+  }
+}
+
+/* Gold radial glow helpers */
+.gold-glow-radial {
+  background-image: radial-gradient(circle at 50% -20%, rgba(212, 175, 55, 0.12) 0%, rgba(10, 10, 10, 0) 65%);
+}
+
+.gold-glow-card {
+  box-shadow: 0 0 25px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(212, 175, 55, 0.3);
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #F2D675 0%, #D4AF37 50%, #B8962E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
