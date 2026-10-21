@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { getApiBaseUrl } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -53,8 +54,9 @@ export function DashboardPage({
   activity = [],
   replies = [],
   onTriggerVoiceBriefing,
-  API = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/+$/, ''),
+  API,
 }) {
+  const apiBase = getApiBaseUrl(API);
   const prefersReduced = useReducedMotion();
   const [summaryData, setSummaryData] = useState(null);
 
@@ -63,7 +65,7 @@ export function DashboardPage({
     let active = true;
     const fetchSummary = async () => {
       try {
-        const res = await fetch(`${API}/dashboard/summary`);
+        const res = await fetch(`${apiBase}/dashboard/summary`);
         if (res.ok) {
           const data = await res.json();
           if (active) setSummaryData(data);
@@ -77,7 +79,7 @@ export function DashboardPage({
       active = false;
       clearInterval(interval);
     };
-  }, [API]);
+  }, [apiBase]);
 
   // Current formatted date
   const todayFormatted = new Intl.DateTimeFormat('en-US', {
@@ -185,7 +187,7 @@ export function DashboardPage({
                   <strong>Gmail Connection Required:</strong> Your Google authorization token expired or was revoked. Reconnect in Top Bar to resume sending.
                 </span>
               </div>
-              <Button variant="outline" size="xs" onClick={() => (window.location.href = `${API}/auth/login`)}>
+              <Button variant="outline" size="xs" onClick={() => (window.location.href = `${apiBase}/auth/login`)}>
                 Reconnect
               </Button>
             </div>

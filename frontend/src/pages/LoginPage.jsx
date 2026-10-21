@@ -1,10 +1,12 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Mail, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/api';
 
-export function LoginPage({ API = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/+$/, ''), error = null, onBackToLanding }) {
+export function LoginPage({ API, error = null, onBackToLanding }) {
+  const apiBase = getApiBaseUrl(API);
   const handleGoogleLogin = () => {
-    window.location.href = `${API}/auth/login`;
+    window.location.href = `${apiBase}/auth/login`;
   };
 
   return (

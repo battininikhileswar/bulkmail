@@ -226,6 +226,12 @@ def get_current_user(request: Request) -> Dict[str, Any]:
 
 # --- Auth Endpoints (Phase 11) ---
 
+@app.get("/auth/login", include_in_schema=False)
+def auth_login_alias(request: Request) -> Any:
+    """Fallback alias handling /auth/login if called without /api prefix."""
+    return auth_login(request)
+
+
 @app.get("/api/auth/login")
 def auth_login(request: Request) -> Any:
     """Initiate Google OAuth 2.0 authorization code flow with PKCE and state."""
@@ -317,6 +323,18 @@ def auth_callback(
     except Exception as e:
         logger.error(f"OAuth callback failed: {e}")
         return RedirectResponse(url=f"{frontend_base}/login?auth_error=" + urllib.parse.quote_plus(str(e)))
+
+
+@app.get("/auth/callback", include_in_schema=False)
+def auth_callback_alias(
+    request: Request,
+    response: Response,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+) -> Any:
+    """Fallback alias handling /auth/callback if called without /api prefix."""
+    return auth_callback(request=request, response=response, code=code, state=state, error=error)
 
 
 @app.get("/api/auth/me")
