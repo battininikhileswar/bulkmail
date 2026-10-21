@@ -80,12 +80,14 @@ async def lifespan(app: FastAPI):
         )
 
     # Start the reply watcher thread and autopilot scheduler
-    watcher.start_watcher()
-    autopilot.start_autopilot()
+    if not config.IS_VERCEL:
+        watcher.start_watcher()
+        autopilot.start_autopilot()
     yield
     # Stop background workers on application shutdown
-    autopilot.stop_autopilot()
-    watcher.stop_watcher()
+    if not config.IS_VERCEL:
+        autopilot.stop_autopilot()
+        watcher.stop_watcher()
 
 
 app = FastAPI(
@@ -95,16 +97,48 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Enable CORS for local Vite development
+# Enable CORS for local Vite development and deployed frontend
+cors_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://bulkmail-frontend-cyan.vercel.app",
+]
+if config.FRONTEND_URL and config.FRONTEND_URL not in cors_origins:
+    cors_origins.append(config.FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root():
+    """Root status and navigation endpoint."""
+    return {
+        "status": "online",
+        "service": "BulkMail API",
+        "version": "3.0.0",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
+def get_session_cookie_params(request: Request) -> Dict[str, Any]:
+    """
+    Return appropriate SameSite and Secure flags.
+    Cross-site HTTPS requests (e.g. frontend and backend on different Vercel domains)
+    require SameSite=None and Secure=True.
+    Local HTTP requests require SameSite=Lax and Secure=False.
+    """
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).lower()
+    is_secure = proto == "https" or config.IS_VERCEL
+    if is_secure:
+        return {"samesite": "none", "secure": True}
+    return {"samesite": "lax", "secure": False}
 
 
 # Pydantic Schemas
@@ -193,7 +227,7 @@ def get_current_user(request: Request) -> Dict[str, Any]:
 # --- Auth Endpoints (Phase 11) ---
 
 @app.get("/api/auth/login")
-def auth_login() -> Any:
+def auth_login(request: Request) -> Any:
     """Initiate Google OAuth 2.0 authorization code flow with PKCE and state."""
     verifier, challenge = auth.generate_pkce_pair()
     state = secrets.token_urlsafe(32)
@@ -208,11 +242,13 @@ def auth_login() -> Any:
     try:
         auth_url = auth.build_authorization_url(state=state, code_challenge=challenge)
         resp = RedirectResponse(url=auth_url, status_code=303)
+        c_params = get_session_cookie_params(request)
         resp.set_cookie(
             key="oauth_state",
             value=state_token,
             httponly=True,
-            samesite="lax",
+            samesite=c_params["samesite"],
+            secure=c_params["secure"],
             max_age=600,
             path="/",
         )
@@ -230,15 +266,16 @@ def auth_callback(
     error: Optional[str] = None,
 ) -> Any:
     """Handle Google OAuth callback, exchange code, retrieve profile, and set session cookie."""
+    frontend_base = config.FRONTEND_URL.rstrip("/")
     if error:
-        return RedirectResponse(url="http://localhost:5173/?auth_error=" + urllib.parse.quote_plus(error))
+        return RedirectResponse(url=f"{frontend_base}/login?auth_error=" + urllib.parse.quote_plus(error))
     if not code or not state:
-        return RedirectResponse(url="http://localhost:5173/?auth_error=missing_code_or_state")
+        return RedirectResponse(url=f"{frontend_base}/login?auth_error=missing_code_or_state")
 
     state_cookie = request.cookies.get("oauth_state")
     verified_state = auth.verify_token(state_cookie)
     if not verified_state or verified_state.get("state") != state:
-        return RedirectResponse(url="http://localhost:5173/?auth_error=invalid_oauth_state")
+        return RedirectResponse(url=f"{frontend_base}/login?auth_error=invalid_oauth_state")
 
     code_verifier = verified_state.get("verifier", "")
     try:
@@ -264,12 +301,14 @@ def auth_callback(
             conn.close()
 
         session_token = auth.create_session_cookie(uid, email)
-        redirect_resp = RedirectResponse(url="http://localhost:5173/", status_code=303)
+        c_params = get_session_cookie_params(request)
+        redirect_resp = RedirectResponse(url=f"{frontend_base}/app", status_code=303)
         redirect_resp.set_cookie(
             key="app_session",
             value=session_token,
             httponly=True,
-            samesite="lax",
+            samesite=c_params["samesite"],
+            secure=c_params["secure"],
             max_age=14 * 86400,
             path="/",
         )
@@ -277,7 +316,7 @@ def auth_callback(
         return redirect_resp
     except Exception as e:
         logger.error(f"OAuth callback failed: {e}")
-        return RedirectResponse(url="http://localhost:5173/?auth_error=" + urllib.parse.quote_plus(str(e)))
+        return RedirectResponse(url=f"{frontend_base}/login?auth_error=" + urllib.parse.quote_plus(str(e)))
 
 
 @app.get("/api/auth/me")
@@ -346,6 +385,12 @@ def get_health(request: Request) -> Dict[str, Any]:
         "stranded_count": stranded_data["total_stranded"],
         "ai_provider": getattr(config, "AI_PROVIDER", "anthropic"),
         "test_email_valid": config.is_test_email_valid(),
+        "storage": {
+            "data_dir": str(config.DATA_DIR),
+            "is_vercel": config.IS_VERCEL,
+            "oauth_redirect_uri": config.OAUTH_REDIRECT_URI,
+            "frontend_url": config.FRONTEND_URL,
+        },
     }
     if user:
         resp["sending_as"] = user["email"]

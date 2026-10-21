@@ -7,7 +7,7 @@ import App from './App.jsx'
 const originalFetch = window.fetch;
 window.fetch = async function (input, init = {}) {
   const url = typeof input === 'string' ? input : input?.url;
-  if (url && (url.includes('/api') || url.includes(':8000'))) {
+  if (url && (url.includes('/api') || url.includes(':8000') || (import.meta.env.VITE_API_URL && url.includes(import.meta.env.VITE_API_URL)))) {
     init = { ...init, credentials: 'include' };
   }
   const response = await originalFetch(input, init);

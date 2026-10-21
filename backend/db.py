@@ -8,10 +8,14 @@ import config
 
 def get_db_connection() -> sqlite3.Connection:
     """Establish connection to SQLite database with foreign keys and WAL enabled."""
+    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.OperationalError:
+        pass
     init_db(conn)
     return conn
 
@@ -331,6 +335,18 @@ def init_db(conn: sqlite3.Connection) -> None:
             """
         )
 
+        # Multi-user tokens persistence table for serverless & database backups
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_tokens (
+                user_id INTEGER PRIMARY KEY,
+                tokens_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+            """
+        )
+
         # Migrate user_id into all resource tables for strict data separation
         for table_name in ["contacts", "campaigns", "messages", "drafts", "automations", "activity_log", "settings"]:
             cursor.execute(f"PRAGMA table_info({table_name})")
@@ -436,7 +452,8 @@ def create_backup() -> str:
     Perform a safe live backup of the SQLite database using sqlite3.Connection.backup.
     Saves to backups/contacts_YYYYMMDD_HHMMSS_ffffff.db and prunes older backups to keep the latest 10.
     """
-    backups_dir = config.BASE_DIR / "backups"
+    target_base = config.DATA_DIR if config.IS_VERCEL else config.BASE_DIR
+    backups_dir = target_base / "backups"
     backups_dir.mkdir(parents=True, exist_ok=True)
     now_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
     backup_file = backups_dir / f"contacts_{now_str}.db"
@@ -463,7 +480,8 @@ def create_backup() -> str:
 
 def list_backups():
     """List all available backup files sorted newest first."""
-    backups_dir = config.BASE_DIR / "backups"
+    target_base = config.DATA_DIR if config.IS_VERCEL else config.BASE_DIR
+    backups_dir = target_base / "backups"
     if not backups_dir.exists():
         return []
     files = sorted(backups_dir.glob("contacts_*.db"), key=lambda f: f.stat().st_mtime, reverse=True)

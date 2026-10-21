@@ -53,7 +53,7 @@ export function DashboardPage({
   activity = [],
   replies = [],
   onTriggerVoiceBriefing,
-  API = 'http://localhost:8000/api',
+  API = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/+$/, ''),
 }) {
   const prefersReduced = useReducedMotion();
   const [summaryData, setSummaryData] = useState(null);

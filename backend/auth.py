@@ -190,51 +190,108 @@ def fetch_google_user_info(access_token: str) -> Dict[str, Any]:
 
 
 def save_user_tokens(user_id: int, token_dict: Dict[str, Any]) -> None:
-    """Securely write tokens to tokens/{user_id}.json. Never log token contents."""
-    config.TOKENS_DIR.mkdir(parents=True, exist_ok=True)
-    token_file = config.TOKENS_DIR / f"{user_id}.json"
-
-    # Merge with existing file if refreshing to keep refresh_token
-    if token_file.exists():
-        try:
-            with open(token_file, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-            if "refresh_token" in existing and "refresh_token" not in token_dict:
-                token_dict["refresh_token"] = existing["refresh_token"]
-        except Exception:
-            pass
-
+    """Securely store tokens in database and disk cache. Never log token contents."""
     cfg = get_oauth_client_config()
     token_dict["client_id"] = cfg["client_id"]
     token_dict["client_secret"] = cfg["client_secret"]
     token_dict["token_uri"] = cfg["token_uri"]
 
-    with open(token_file, "w", encoding="utf-8") as f:
-        json.dump(token_dict, f)
-
-    # Restrict permissions on POSIX
+    # 1. Dual persistence: Save into SQLite user_tokens table
     try:
-        os.chmod(token_file, 0o600)
-    except Exception:
-        pass
+        import db
+        conn = db.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT tokens_json FROM user_tokens WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row and "refresh_token" not in token_dict:
+            try:
+                existing_db = json.loads(row[0])
+                if "refresh_token" in existing_db:
+                    token_dict["refresh_token"] = existing_db["refresh_token"]
+            except Exception:
+                pass
+
+        now_str = datetime.utcnow().isoformat()
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO user_tokens (user_id, tokens_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    tokens_json = excluded.tokens_json,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, json.dumps(token_dict), now_str),
+            )
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Could not persist tokens to database for user {user_id}: {e}")
+
+    # 2. Dual persistence: Write to disk cache if directory is writable
+    try:
+        config.ensure_tokens_dir()
+        token_file = config.TOKENS_DIR / f"{user_id}.json"
+        if token_file.exists() and "refresh_token" not in token_dict:
+            try:
+                with open(token_file, "r", encoding="utf-8") as f:
+                    existing_file = json.load(f)
+                if "refresh_token" in existing_file:
+                    token_dict["refresh_token"] = existing_file["refresh_token"]
+            except Exception:
+                pass
+
+        with open(token_file, "w", encoding="utf-8") as f:
+            json.dump(token_dict, f)
+
+        # Restrict permissions on POSIX
+        try:
+            os.chmod(token_file, 0o600)
+        except Exception:
+            pass
+    except OSError as e:
+        logger.warning(f"Could not write token file for user {user_id}: {e}")
 
 
 def get_user_credentials(user_id: int) -> Optional[Any]:
     """Load Google OAuth credentials for user, automatically refreshing expired tokens."""
+    token_dict: Optional[Dict[str, Any]] = None
     token_file = config.TOKENS_DIR / f"{user_id}.json"
-    if not token_file.exists():
+
+    # Try disk cache first
+    if token_file.exists():
+        try:
+            with open(token_file, "r", encoding="utf-8") as f:
+                token_dict = json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to read token file for user {user_id}: {e}")
+
+    # Fallback to database user_tokens table
+    if not token_dict:
+        try:
+            import db
+            conn = db.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT tokens_json FROM user_tokens WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                token_dict = json.loads(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to load tokens from DB for user {user_id}: {e}")
+
+    if not token_dict:
         return None
 
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
 
-        creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+        creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
         if not creds.valid:
             if creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-                with open(token_file, "w", encoding="utf-8") as f:
-                    f.write(creds.to_json())
+                updated_dict = json.loads(creds.to_json())
+                save_user_tokens(user_id, updated_dict)
             else:
                 return None
         return creds

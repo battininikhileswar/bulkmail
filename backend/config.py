@@ -83,16 +83,89 @@ def get_ai_model(provider: str = "", purpose: str = "classifier") -> str:
         return ANTHROPIC_RESPONDER_MODEL if is_responder else ANTHROPIC_CLASSIFIER_MODEL
 
 
+# Environment detection
+IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() in ("production", "prod") or IS_VERCEL
+
+
+def _is_dir_writable(path: Path) -> bool:
+    """Test if a directory is writable without leaving leftover files."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        test_file = path / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return True
+    except (OSError, PermissionError):
+        return False
+
+
+def _resolve_data_dir() -> Path:
+    """
+    Resolve the working data directory.
+    - If DATA_DIR environment variable is provided, use it.
+    - If BASE_DIR is writable (local dev), use BASE_DIR.
+    - If running in a read-only filesystem (e.g. Vercel /var/task), fallback to /tmp/bulkmail.
+    """
+    custom_dir = os.getenv("DATA_DIR", "").strip()
+    if custom_dir:
+        p = Path(custom_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    if _is_dir_writable(BASE_DIR):
+        return BASE_DIR
+
+    # Fallback to /tmp for read-only serverless environments
+    tmp_dir = Path("/tmp/bulkmail")
+    try:
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        return tmp_dir
+    except Exception:
+        import tempfile
+        p = Path(tempfile.gettempdir()) / "bulkmail"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+
+DATA_DIR = _resolve_data_dir()
+
 # Database & Facts settings
-DB_PATH = BASE_DIR / "contacts.db"
+_custom_db = os.getenv("DB_PATH", "").strip()
+DB_PATH = Path(_custom_db) if _custom_db else DATA_DIR / "contacts.db"
+
 FACTS_PATH = BASE_DIR / "facts.json"
+if not FACTS_PATH.exists() and (BASE_DIR.parent / "facts.json").exists():
+    FACTS_PATH = BASE_DIR.parent / "facts.json"
 
 # Auth & Session Settings (Phase 11)
 DEFAULT_SESSION_SECRET = "super-secret-mail-assistant-session-key-change-in-env"
 SESSION_SECRET = os.getenv("SESSION_SECRET", DEFAULT_SESSION_SECRET)
-OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
-TOKENS_DIR = BASE_DIR / "tokens"
-TOKENS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Frontend URL for OAuth redirects & CORS
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "https://bulkmail-frontend-cyan.vercel.app" if IS_VERCEL else "http://localhost:5173",
+).rstrip("/")
+
+# OAuth redirect URI resolution
+_vercel_domain = os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or os.getenv("VERCEL_URL")
+if _vercel_domain and not os.getenv("OAUTH_REDIRECT_URI"):
+    OAUTH_REDIRECT_URI = f"https://{_vercel_domain}/api/auth/callback"
+else:
+    OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
+
+_custom_tokens = os.getenv("TOKENS_DIR", "").strip()
+TOKENS_DIR = Path(_custom_tokens) if _custom_tokens else DATA_DIR / "tokens"
+
+
+def ensure_tokens_dir() -> Path:
+    """Safely ensure the tokens directory exists on disk when needed."""
+    try:
+        TOKENS_DIR.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError):
+        pass
+    return TOKENS_DIR
 
 
 def is_session_secret_default_or_missing() -> bool:
