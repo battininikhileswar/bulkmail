@@ -274,6 +274,21 @@ class GmailEmailSender(BaseEmailSender):
             is_quota = any(term in err_str.lower() for term in [
                 "ratelimit", "rate_limit", "user_rate_limit", "quota", "dailylimit", "429"
             ])
+
+            # If Gmail API is disabled in Google Cloud Project, fallback to configured SMTP if available
+            if any(term in err_str.lower() for term in ["accessnotconfigured", "has not been used in project", "is disabled"]):
+                if config.SMTP_HOST and config.SMTP_USER and config.SMTP_PASSWORD:
+                    logger.warning("Gmail API is disabled in Google Cloud Project. Falling back to configured SMTP relay.")
+                    smtp_sender = SMTPEmailSender(sender_email=self.sender_email)
+                    return smtp_sender.send_email(to_email, subject, body, thread_id=thread_id, in_reply_to=in_reply_to)
+
+                # Format clean, human-readable instructions with direct Google Cloud link
+                import re
+                enable_url_match = re.search(r"https://console\.developers\.google\.com[^\s\"'>]+", err_str)
+                enable_url = enable_url_match.group(0) if enable_url_match else "https://console.developers.google.com/apis/api/gmail.googleapis.com/overview"
+                clean_err = f"Gmail API is disabled in your Google Cloud Project. Click here to enable it: {enable_url} (takes ~1 min to activate), then retry."
+                return SendResult(success=False, error=clean_err)
+
             return SendResult(success=False, error=f"Gmail API Error: {err_str}", is_quota_error=is_quota)
 
 

@@ -314,8 +314,26 @@ export function CampaignPage({
               </Button>
             </div>
             {testResult && (
-              <div className="mt-2 text-xs text-[#F2D675] font-mono bg-[#1A1A1A] p-2 rounded-lg border border-[rgba(212,175,55,0.2)]">
-                {testResult}
+              <div className="mt-2 text-xs text-[#F2D675] font-mono bg-[#1A1A1A] p-2 rounded-lg border border-[rgba(212,175,55,0.2)] break-words whitespace-pre-wrap">
+                {testResult.includes('http') ? (
+                  testResult.split(/(https?:\/\/[^\s]+)/g).map((part, idx) =>
+                    part.startsWith('http') ? (
+                      <a
+                        key={idx}
+                        href={part}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline text-[#F2D675] hover:text-[#FFF] font-semibold break-all"
+                      >
+                        {part}
+                      </a>
+                    ) : (
+                      part
+                    )
+                  )
+                ) : (
+                  testResult
+                )}
               </div>
             )}
           </div>
