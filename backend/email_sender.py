@@ -4,6 +4,7 @@ import base64
 from dataclasses import dataclass, field
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import logging
 import os
 from pathlib import Path
 import smtplib
@@ -12,6 +13,8 @@ from typing import Any, Dict, List, Optional
 import uuid
 
 import config
+
+logger = logging.getLogger("mail_agent.sender")
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
@@ -145,7 +148,8 @@ class SMTPEmailSender(BaseEmailSender):
                 if self.use_tls and self.port != 465:
                     server.starttls()
                 if self.user and self.password:
-                    server.login(self.user, self.password)
+                    clean_pw = self.password.replace(" ", "")
+                    server.login(self.user, clean_pw)
                 server.send_message(msg)
 
             return SendResult(success=True, message_id=msg_id, thread_id=thread_id or msg_id)

@@ -1100,6 +1100,15 @@ def test_send_endpoint(campaign_id: int, req: TestSendRequest, user: Dict[str, A
         return queue_worker.send_test_email(campaign_id, req.test_email, user_id=user["id"], sender_email=user["email"])
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Test send unexpected error: {e}", exc_info=True)
+        return {
+            "success": False,
+            "sent_count": 0,
+            "test_email": req.test_email,
+            "samples": [],
+            "message": f"Dispatch error: {str(e)}",
+        }
 
 
 @app.post("/api/campaigns/{campaign_id}/start")
