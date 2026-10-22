@@ -532,7 +532,14 @@ def send_test_email(
     conn.close()
 
     if not sample_rows:
-        return {"success": False, "sent_count": 0, "message": "No eligible contacts found for test preview."}
+        # Fallback to test_email as sample recipient so test-send always works even before uploading CSV
+        sample_rows = [{
+            "contact_id": 0,
+            "email": test_email,
+            "name": test_email.split("@")[0].replace(".", " ").title(),
+            "extra": json.dumps({"company": "Sample Corp", "role": "Preview Tester"}),
+            "contact_status": "pending",
+        }]
 
     sender = sender_override or get_sender(camp["provider"], test_mode=True, user_id=eff_user_id, sender_email=sender_email)
     results = []
@@ -553,11 +560,16 @@ def send_test_email(
             "error": res.error,
         })
 
+    success_count = sum(1 for s in results if s["success"])
+    all_failed = len(results) > 0 and success_count == 0
+    first_error = next((s["error"] for s in results if s.get("error")), "Failed to dispatch test email.")
+
     return {
-        "success": True,
-        "sent_count": len(results),
+        "success": not all_failed and len(results) > 0,
+        "sent_count": success_count,
         "test_email": test_email,
         "samples": results,
+        "message": first_error if all_failed else f"Dispatched {success_count} sample(s) to {test_email}",
     }
 
 

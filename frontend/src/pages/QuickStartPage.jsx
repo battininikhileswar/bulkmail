@@ -180,12 +180,13 @@ export function QuickStartPage({ API, onNavigate, onCampaignCreated }) {
           body: JSON.stringify({ test_email: testEmail }),
         });
         const td = await testRes.json();
-        if (td.success) {
+        if (testRes.ok && td.success) {
           toast.success(`Dispatched sample preview to ${testEmail}`);
           setTestResult(`Sent sample to ${testEmail}`);
         } else {
-          toast.error(td.message || 'Test send failed');
-          setTestResult(td.message || 'Failed');
+          const errMsg = td.detail || td.message || td.samples?.[0]?.error || 'Test send failed';
+          toast.error(errMsg);
+          setTestResult(errMsg);
         }
       }
     } catch {

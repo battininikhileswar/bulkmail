@@ -73,14 +73,55 @@ def verify_token(signed_token: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
 
 
+def encrypt_data(data: str, secret: str = config.SESSION_SECRET) -> str:
+    """Encrypt a string using authenticated HMAC-SHA256 stream cipher (pure Python standard library)."""
+    raw_bytes = data.encode("utf-8")
+    salt = secrets.token_bytes(16)
+    keystream = bytearray()
+    counter = 0
+    while len(keystream) < len(raw_bytes):
+        block = hmac.new(secret.encode("utf-8"), salt + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        keystream.extend(block)
+        counter += 1
+    ciphertext = bytes(b ^ k for b, k in zip(raw_bytes, keystream))
+    mac = hmac.new(secret.encode("utf-8"), salt + ciphertext, hashlib.sha256).digest()
+    payload = salt + mac + ciphertext
+    return base64.urlsafe_b64encode(payload).decode("ascii")
+
+
+def decrypt_data(token: str, secret: str = config.SESSION_SECRET) -> Optional[str]:
+    """Decrypt a string encrypted with encrypt_data. Returns None if invalid or tampered."""
+    try:
+        raw = base64.urlsafe_b64decode(token.encode("ascii"))
+        if len(raw) < 48:
+            return None
+        salt = raw[:16]
+        expected_mac = raw[16:48]
+        ciphertext = raw[48:]
+        actual_mac = hmac.new(secret.encode("utf-8"), salt + ciphertext, hashlib.sha256).digest()
+        if not hmac.compare_digest(expected_mac, actual_mac):
+            return None
+        keystream = bytearray()
+        counter = 0
+        while len(keystream) < len(ciphertext):
+            block = hmac.new(secret.encode("utf-8"), salt + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+            keystream.extend(block)
+            counter += 1
+        plaintext = bytes(c ^ k for c, k in zip(ciphertext, keystream))
+        return plaintext.decode("utf-8")
+    except Exception:
+        return None
+
+
 def create_session_cookie(
     user_id: int,
     email: str,
     days: int = 14,
     name: Optional[str] = None,
     picture: Optional[str] = None,
+    tokens: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Generate a signed session cookie value for the authenticated user."""
+    """Generate a signed session cookie value for the authenticated user, optionally carrying encrypted tokens."""
     payload = {
         "uid": user_id,
         "email": email,
@@ -90,6 +131,11 @@ def create_session_cookie(
         payload["name"] = name
     if picture:
         payload["picture"] = picture
+    if tokens:
+        try:
+            payload["tokens_enc"] = encrypt_data(json.dumps(tokens))
+        except Exception:
+            pass
     return sign_token(payload)
 
 

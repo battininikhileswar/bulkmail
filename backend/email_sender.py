@@ -113,14 +113,16 @@ class SMTPEmailSender(BaseEmailSender):
         if not self.host:
             return SendResult(success=False, error="SMTP_HOST is not configured in environment or .env.")
 
-        # SMTP provider is only allowed when sender's From address is on a custom domain (non-@gmail.com)
+        # SMTP provider is allowed for custom domains, or @gmail.com when using Google SMTP with App Password
         from limits import can_use_smtp
         sender_addr = self.sender_email or self.user or "noreply@event.local"
         if sender_addr and not can_use_smtp(sender_addr):
-            return SendResult(
-                success=False,
-                error="SMTP sending is only permitted for custom domain addresses (non-@gmail.com) to ensure proper SPF/DKIM delivery.",
-            )
+            is_gmail_smtp = bool(self.host and ("gmail.com" in self.host.lower() or "google" in self.host.lower()))
+            if not is_gmail_smtp:
+                return SendResult(
+                    success=False,
+                    error="SMTP sending is only permitted for custom domain addresses (non-@gmail.com) unless using Google SMTP (smtp.gmail.com) with an App Password.",
+                )
 
         msg = MIMEMultipart()
         msg["From"] = f"{self.sender_name} <{sender_addr}>"
@@ -300,4 +302,16 @@ def get_sender(
     prov = (provider or config.PROVIDER).lower()
     if prov == "smtp":
         return SMTPEmailSender(sender_email=sender_email)
+
+    # If Gmail API requested, check if credentials exist or fallback to configured SMTP relay
+    if user_id is not None:
+        try:
+            import auth
+            creds = auth.get_user_credentials(user_id)
+            if not creds and config.SMTP_HOST and config.SMTP_USER and config.SMTP_PASSWORD:
+                logger.info("Gmail OAuth credentials not found for user %s, falling back to configured SMTP", user_id)
+                return SMTPEmailSender(sender_email=sender_email)
+        except Exception:
+            pass
+
     return GmailEmailSender(user_id=user_id, sender_email=sender_email)

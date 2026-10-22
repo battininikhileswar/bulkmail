@@ -655,12 +655,13 @@ function Workspace({ currentUser, setCurrentUser, onLogout }) {
         body: JSON.stringify({ test_email: testEmail }),
       });
       const d = await res.json();
-      if (d.success) {
+      if (res.ok && d.success) {
         toast.success(`Dispatched ${d.sent_count} sample(s) to ${testEmail}`);
         setTestResult(`Dispatched ${d.sent_count} sample(s) to ${testEmail}`);
       } else {
-        toast.error(d.message || 'Test send failed');
-        setTestResult(d.message || 'Error');
+        const errMsg = d.detail || d.message || d.samples?.[0]?.error || 'Test send failed';
+        toast.error(errMsg);
+        setTestResult(errMsg);
       }
     } catch {
       toast.error('Network error during test send');

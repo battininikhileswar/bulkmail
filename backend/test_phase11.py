@@ -502,3 +502,98 @@ def test_login_and_app_fallback_routes():
     assert f"{config.FRONTEND_URL}/app" in res_api_app.headers.get("location", "")
 
 
+def test_serverless_token_persistence(monkeypatch):
+    """Encrypted OAuth tokens inside session token automatically hydrate cold serverless containers."""
+    client = TestClient(main.app)
+    uid = 99
+    dummy_tokens = {
+        "access_token": "ya29.dummy_access_token",
+        "refresh_token": "1//dummy_refresh_token",
+        "client_id": "dummy_client_id.apps.googleusercontent.com",
+        "client_secret": "dummy_client_secret",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+
+    # Ensure token file does NOT exist initially
+    token_file = config.TOKENS_DIR / f"{uid}.json"
+    if token_file.exists():
+        token_file.unlink()
+
+    # Create session cookie with encrypted tokens
+    session_token = auth.create_session_cookie(
+        user_id=uid,
+        email="hydrated.user@example.com",
+        name="Hydrated User",
+        tokens=dummy_tokens,
+    )
+    headers = {"Authorization": f"Bearer {session_token}"}
+
+    # Calling any protected endpoint hydrates the token file
+    res = client.get("/api/auth/me", headers=headers)
+    assert res.status_code == 200
+
+    # Token file must now exist and contain the original credentials
+    assert token_file.exists()
+    import json
+    with open(token_file, "r") as f:
+        loaded = json.load(f)
+    assert loaded["access_token"] == "ya29.dummy_access_token"
+    assert loaded["refresh_token"] == "1//dummy_refresh_token"
+
+
+def test_send_test_email_without_uploaded_contacts(monkeypatch):
+    """Test send should work with fallback sample contact even if no CSV contacts have been uploaded."""
+    from email_sender import BaseEmailSender, SendResult
+
+    class MockTestSender(BaseEmailSender):
+        def __init__(self):
+            self.dispatched = []
+        def get_daily_cap(self):
+            return 400
+        def send_email(self, to_email, subject, body, thread_id=None, in_reply_to=None):
+            self.dispatched.append({"to": to_email, "subject": subject, "body": body})
+            return SendResult(success=True, message_id="mock-msg-1")
+
+    mock_sender = MockTestSender()
+
+    # Create a campaign with NO contacts
+    conn = db.get_db_connection()
+    now_str = datetime.utcnow().isoformat()
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO campaigns (name, subject, mode, template, provider, status, created_at, user_id) VALUES ('Zero Contact Camp', 'Welcome {name}', 'same', 'Hello {name} from {company}', 'gmail', 'draft', ?, 1)",
+            (now_str,),
+        )
+        camp_id = cursor.lastrowid
+    conn.close()
+
+    result = queue_worker.send_test_email(
+        campaign_id=camp_id,
+        test_email="recipient@example.com",
+        sender_override=mock_sender,
+        user_id=1,
+    )
+
+    assert result["success"] is True
+    assert result["sent_count"] == 1
+    assert len(mock_sender.dispatched) == 1
+    assert mock_sender.dispatched[0]["to"] == "recipient@example.com"
+    assert "Recipient" in mock_sender.dispatched[0]["subject"]
+
+
+def test_gmail_smtp_allowed_with_app_password():
+    """Gmail address is allowed to use SMTPEmailSender when host is smtp.gmail.com."""
+    import email_sender
+    sender = email_sender.SMTPEmailSender(sender_email="user@gmail.com")
+    sender.host = "smtp.gmail.com"
+    sender.user = "user@gmail.com"
+    sender.password = "app-password-test"
+
+    # With host smtp.gmail.com, sending should not be blocked by domain SPF/DKIM check
+    # It will fail only on actual network connect (since it's a test environment), not on domain validation error
+    res = sender.send_email("to@example.com", "Subj", "Body")
+    assert "SMTP sending is only permitted for custom domain addresses" not in (res.error or "")
+
+
+

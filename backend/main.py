@@ -218,6 +218,19 @@ def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
                             picture_url=payload.get("picture"),
                             user_id=uid,
                         )
+
+                # Self-heal Google OAuth tokens in current container if missing
+                if uid and "tokens_enc" in payload:
+                    token_file = config.TOKENS_DIR / f"{uid}.json"
+                    if not token_file.exists():
+                        try:
+                            dec_str = auth.decrypt_data(payload["tokens_enc"])
+                            if dec_str:
+                                token_dict = json.loads(dec_str)
+                                auth.save_user_tokens(uid, token_dict)
+                        except Exception:
+                            pass
+
                 if user_row:
                     return dict(user_row)
 
@@ -361,7 +374,7 @@ def auth_callback(
         finally:
             conn.close()
 
-        session_token = auth.create_session_cookie(uid, email, name=name, picture=picture)
+        session_token = auth.create_session_cookie(uid, email, name=name, picture=picture, tokens=tokens)
         c_params = get_session_cookie_params(request)
         redirect_resp = RedirectResponse(url=f"{frontend_base}/app#session={session_token}", status_code=303)
         redirect_resp.set_cookie(
